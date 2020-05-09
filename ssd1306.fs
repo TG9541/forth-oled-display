@@ -1,65 +1,53 @@
+\ 1141 bytes
 \ Driver for ssd1306 oled display 128x64 over i2c
 \ font from mecrisp-stellaris 2.2.1a (GPL3) 
 \ http://mecrisp.sourceforge.net
 
-: i2c-init ( -- ) 
-   0 $5210 0 B!   \ Periferal disable
-   1 $5212 4 B!   \ CPU freq 16 MHz
-   $A0 $5213 C!   \ own address 0xA0
-   0 $521C 6 B!   \ duty cycle
-   1 $5214 6 B!   \ mandatory
-   $50 $521B C!   \ i2c freq 100 kHz
-   $11 $521D C!   \ TRISER = CPU freq in MHz + 1
-   1 $5210 0 B!   \ Periferal enable
-   1 $5211 2 B!   \ acknoledge enable
-;
+\ ssdi ( --) initialise i2c and ssd1306-display
+\ cls ( --) clear screen
+\ dtxt ( adr --)	display text compiled with $"
+\ Text has to be compiled before it can be displayed.
+\ : txt $" text to be displayed" ;
+\ txt dtxt will display "text to be displayed" on the oled screen.
+\ d#	( n --) display number
+\ 1234 d#	will display "1234".
 
-\ Check event:
-: i2c-ce ( u -- f)  
-   dup >R $0004 = if $5218 C@ $04 AND  ( last_event) 
-                      \ Slave acknowledge failure
-   else
-         $5217 C@   ( ?)          \ StatusRegister1
-         $5219 C@   ( ? ?)        \ StatusRegister3
-         $100 * or  
-   then  ( last_event)
-   R@ and R> = if -1 else 0 then ;
+\ The display has 8 pages (lines) of 128x8 dots. Positioning is done by sending display commands:
+\ dcmd (b --)	send one display command
+\ dcmds (b b .. b n --)	send multiple (n) display commands
 
-: i2c-start ( --)
-   1 $5211 0 B! ;	         \ set CR2 bit 0
+\ Display positioning commands:
+\ $B0 - $B7	Vertical position: Line 0 - line7
+\ 0-$F	Horizontal position in steps of 1 dot
+\ $10 -$17	Horizontal position in steps of 16 dots
+\ $B2 $13 $5 3 dcmds 
+\ will position to third line ($B2), dot 53 ($13 = 3 x 16, $5 = 5, together 53).
+\ dcmds needs the number of display commands to be send.
 
-: i2c-stop ( ? --) 
-   if begin $0684 i2c-ce until   \ slave_byte_transmitted
-   else begin $0784 i2c-ce until \ master_byte_transmitted
-   1 $5211 1 B! ;                \ CR2 bit 1
+RAM
 
-\ write mode send address:
-: i2c-wsa ( adr --) 
-   begin $0301 i2c-ce until      \ master_mode_select
-   2* $5216 C!                   \ push left shifted addr to DR
-   begin $0302 i2c-ce until ;    \ master_receiver_mode_selected
+: _ ;
 
-\ send byte:
-: i2c-sb ( c --) 
-   begin $0780 i2c-ce until  $5216 c! ;
-			         \ master_byte_transmitting
+#require MARKER
+\ #require i2c.fs
 
-: i2c-w ( b reg-adr i2c-adr) 
-   i2c-start i2c-wsa i2c-sb i2c-sb 0 i2c-stop ;
+NVM
+variable page &127 allot
+
+MARKER clean
+
+$3c constant ssd  \ slave address
+
+NVM
 
 \ display command:
-   : dcmd ( b --) 0 $3c i2c-w ;
+   : dcmd ( b --) 0 ssd i2wb ;
 
 \ multiple display commands:
    : dcmds ( b b .. b n --)
 	0 do dcmd loop ;
 
-\ write n bytes:
-: i2c-wsn ( pointer n reg-adr i2c-adr --) 
-   i2c-start i2c-wsa i2c-sb 
-   0 do dup i + c@ i2c-sb loop 0 i2c-stop drop ;
-
-create ssd-init
+create dia  \ display initialisation array
 \ * = vccstate dependant
  $AE C,  \ SSD1306_DISPLAYOFF
  $D5 C,  \ SSD1306_SETDISPLAYCLOCKDIV
@@ -89,25 +77,26 @@ create ssd-init
  $AF C,  \ SSD1306_DISPLAYON
  
 \ Initialise display
-: ssdi ( --)
-   i2c-init ssd-init &27 0 $3c i2c-wsn ;
+: ssdi  ( --)
+   i2i dia &27 0 ssd i2wf
+;
 
 \ write byte in display memory:
-: wram ( b --) 
-   $40 $3c i2c-w ;
-
-variable page &127 allot 
+: wram  ( b --) 
+   $40 ssd i2wb
+;
 
 \ Write page:
-: wpage ( --)
-   0 $10 2 dcmds page $80 $40 $3c i2c-wsn ; 
+: wpage  ( --)
+   0 $10 2 dcmds page $80 $40 ssd i2wf
+;
 
 \ Write screen = 8 pages: 
-: wsc ( --)
+: wsc  ( --)
    8 0 do i $B0 + dcmd wpage loop ;
 
 \ Fill screen with character
-: fscr ( b --)
+: fscr  ( b --)
    page $80 rot fill wsc ;
 
 \ Clear screen
@@ -219,35 +208,22 @@ create font   \ 5x8
 decimal
 
 \ Translates ASCII to address of bitpatterns:
-: a>bp ( c -- c-adr ) 
+: a>bp  ( c -- c-adr ) 
   &32 max &127 min  &32 - 5 * font + ;
 
-\ Draw character:
-: drc ( c --)
+\ Display character:
+: drc  ( c --)
    a>bp 5 0 do dup c@ wram 1 + loop drop ;
 
 \ spaces
-: spc ( u --) 0 do 0 wram loop ;
+: spc  ( u --) 0 do 0 wram loop ;
 
 \ display text compiled with $"
-: dtxt ( adr --)
+: dtxt  ( adr --)
    count 0 do dup c@ dup &32 = if 3 spc drop 
    else drc 1 spc then 1+ loop drop ;
    
 \ display number
-: d# ( n --) dup abs <# #s swap sign #> 0 
+: d#  ( n --) dup abs <# #s swap sign #> 0 
 	do dup c@ drc 1 spc 1+ loop drop ;
-
-
-
-
-
-
-
-
-
-
-
-
-
-					 
+clean

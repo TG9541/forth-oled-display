@@ -1,55 +1,28 @@
-# forth-oled-display
+# stm8-peripherals-forth
 
-Forth words to drive a ssd1306 oled mini display
- with stm8ef (https://github.com/TG9541/stm8ef).
+This repository is based on https://github.com/TG9541/stm8ef .
+
+Thomas supplied a Makefile that gets you started in no time:
+
+   hook up a ST-link-V2 to your stm8 board, 
+   run "make" in terminal and you are ready to go.
  
- These words utilize the i2c capabilities of the stm8.
- 
- Assumed i2c-address: $3C
- 
- ssdi ( --) 	  initialise i2c and ssd1306-display
- 
- cls ( --)  	  clear screen
- 
- dtxt ( adr --)	display text compiled with $"
- 
- d#	( n --)     display number
- 
- Text has to be compiled before it can be displayed.
- 
- 	: txt $" text to be displayed" ;
-  
+MARK:      create marker to easily remove words from flash
 
-txt dtxt will display "text to be displayed" on the oled screen.
+adc-l:      ADC single scan mode for STM8L
 
-1234 d#	will display "1234".
+i2c.fs:     I2C communication
 
+ssd1306.fs: I2C oled display
 
-The display has 8 pages (lines) of 128x8 dots.
-Positioning is done by sending display commands:
+rtc.fs: I2C RealTimeClock modules
 
-dcmd (b --)	 	send one display command
+sdinit.fs:  Initialise SD card for SPI communication
 
-dcmds b b .. b n --)	send multiple (n) display commands
+sdfat.fs:   SD card FAT32 communication
 
-Display positioning commands:
+io.fs:      GPIO manipulation
 
-$B0 - $B7	Vertical position: Line 0 - line7
+nRF:         remote console with nRF24 radio's based on Richard's library
 
-0-$F		Horizontal position in steps of 1 dot
-
-$10 -$17	Horizontal position in steps of 16 dots
- 
-
-
-    $B2 $13 $5 3 dcmds 
-
-will position to third line ($B2), dot 53    ($13 = 3 x 16, $5 = 5, together 53).
-
-dcmds needs the number of display commands to be sended.
-
-
-
-
-TODO prevent freezing when no display is connected.
- 
+nRF-L:       the same for STM8L051
